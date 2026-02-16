@@ -1,7 +1,7 @@
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-use crate::{hash, transaction::Transaction};
+use crate::{error::BlockchainError, transaction::Transaction, utils::hash};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
@@ -14,7 +14,11 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn new(index: u64, transactions: Vec<Transaction>, previous_hash: String) -> Self {
+    pub fn new(
+        index: u64,
+        transactions: Vec<Transaction>,
+        previous_hash: String,
+    ) -> Result<Self, BlockchainError> {
         let timestamp = Utc::now().timestamp();
 
         let mut block = Self {
@@ -26,11 +30,11 @@ impl Block {
             hash: String::new(),
         };
 
-        block.hash = block.calculate_hash();
-        block
+        block.hash = block.calculate_hash()?;
+        Ok(block)
     }
 
-    pub fn calculate_hash(&self) -> String {
+    pub fn calculate_hash(&self) -> Result<String, BlockchainError> {
         let data = serde_json::to_string(&(
             self.index,
             self.timestamp,
@@ -38,8 +42,8 @@ impl Block {
             &self.previous_hash,
             self.nonce,
         ))
-        .unwrap();
+        .map_err(|e| BlockchainError::Serialization(e.to_string()))?;
 
-        hash::calculate_hash(&data)
+        Ok(hash::calculate_hash(&data))
     }
 }

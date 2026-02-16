@@ -1,54 +1,52 @@
-use crate::{block::Block, pow::mine_block, transaction::Transaction};
+use crate::{block::Block, consensus::Consensus, error::BlockchainError, transaction::Transaction};
+use tracing::info;
 
-pub struct Blockchain {
+pub struct Blockchain<C: Consensus> {
     pub chain: Vec<Block>,
-    pub difficulty: usize,
+    pub consensus: C,
 }
 
-impl Blockchain {
-    pub fn new(difficulty: usize) -> Self {
+impl<C: Consensus> Blockchain<C> {
+    pub fn new(consensus: C) -> Result<Self, BlockchainError> {
         let mut blockchain = Self {
             chain: Vec::new(),
-            difficulty,
+            consensus,
         };
 
-        blockchain.create_genesis_block();
-        blockchain
+        let genesis = Block::new(0, Vec::new(), "0".to_string())?;
+        blockchain.chain.push(genesis);
+        Ok(blockchain)
     }
 
-    fn create_genesis_block(&mut self) {
-        let genesis = Block::new(0, Vec::new(), "0".to_string());
-        self.chain.push(genesis);
-    }
-
-    pub fn add_block(&mut self, transactions: Vec<Transaction>) {
+    pub fn add_block(&mut self, transactions: Vec<Transaction>) -> Result<(), BlockchainError> {
         for tx in &transactions {
             if !tx.is_valid() {
-                panic!("Invalid transaction detected");
+                return Err(BlockchainError::InvalidTransaction);
             }
         }
 
         let previous_hash = self.chain.last().unwrap().hash.clone();
-        let mut block = Block::new(self.chain.len() as u64, transactions, previous_hash);
+        let mut block = Block::new(self.chain.len() as u64, transactions, previous_hash)?;
 
-        mine_block(&mut block, self.difficulty);
+        info!("Mining block {}", block.index);
 
+        self.consensus.mine(&mut block)?;
         self.chain.push(block);
+
+        Ok(())
     }
 
-    pub fn is_valid(&self) -> bool {
+    pub fn validate(&self) -> Result<(), BlockchainError> {
         for i in 1..self.chain.len() {
             let current = &self.chain[i];
             let previous = &self.chain[i - 1];
 
-            if current.hash != current.calculate_hash() {
-                return false;
+            if current.previous_hash != previous.hash {
+                return Err(BlockchainError::InvalidChain);
             }
 
-            if current.previous_hash != previous.hash {
-                return false;
-            }
+            self.consensus.validate(current)?;
         }
-        true
+        Ok(())
     }
 }

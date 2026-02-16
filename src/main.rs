@@ -1,28 +1,53 @@
 mod block;
 mod blockchain;
-mod hash;
-mod pow;
+mod config;
+mod consensus;
+mod error;
 mod transaction;
+mod utils;
+
+use clap::Parser;
+use tracing::{error, info};
+use tracing_subscriber::FmtSubscriber;
 
 use blockchain::Blockchain;
+use config::Config;
+use consensus::pow::ProofOfWork;
 use transaction::Transaction;
 
-fn main() {
-    let mut blockchain = Blockchain::new(4);
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Structured logging setup
+    let subscriber = FmtSubscriber::builder().with_target(false).finish();
 
-    let tx1 = Transaction {
-        from: "Alice".into(),
-        to: "Bob".into(),
-        amount: 50,
+    tracing::subscriber::set_global_default(subscriber)?;
+
+    // Parse CLI arguments
+    let config = Config::parse();
+
+    info!("Starting node with difficulty {}", config.difficulty);
+
+    let consensus = ProofOfWork {
+        difficulty: config.difficulty,
     };
 
-    let tx2 = Transaction {
-        from: "Bob".into(),
-        to: "Charlie".into(),
-        amount: 25,
-    };
+    let mut blockchain = Blockchain::new(consensus)?;
 
-    blockchain.add_block(vec![tx1, tx2]);
+    for i in 0..config.blocks {
+        let tx = Transaction {
+            from: "Alice".into(),
+            to: "Bob".into(),
+            amount: 10 + i as u64,
+        };
 
-    println!("Blockchain valid: {}", blockchain.is_valid());
+        if let Err(e) = blockchain.add_block(vec![tx]) {
+            error!("Failed to add block: {}", e);
+        }
+    }
+
+    match blockchain.validate() {
+        Ok(_) => info!("Blockchain valid"),
+        Err(e) => error!("Blockchain invalid: {}", e),
+    }
+
+    Ok(())
 }
